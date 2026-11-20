@@ -565,6 +565,7 @@ function demoApi(a, p) {
       if (nb < 0) throw new Error("Solde insuffisant pour retirer ce montant");
       c.balance = nb; return {balance:nb};
     }
+    case "ban_customer": { const c = D.others.find(x => x.id === p.customer_id); if (c) c.banned = p.banned; return {ok:true}; }
     case "save_settings": Object.assign(D.settings, p.row); return {ok:true};
     case "save_announcement": { const row = {...p.row}; if (!row.id) row.id = uid(); const i = D.anns.findIndex(x => x.id === row.id); i < 0 ? D.anns.push(row) : (D.anns[i] = {...D.anns[i], ...row}); return {row}; }
     case "delete_announcement": D.anns = D.anns.filter(x => x.id !== p.id); return {ok:true};
@@ -586,6 +587,7 @@ async function api(action, payload = {}) {
 }
 async function refresh() {
   const d = await api("init");
+  S.banned = !!d.banned; if (S.banned) return;
   S.cats = (d.cats || []).sort((a, b) => a.position - b.position);
   S.items = (d.items || []).sort((a, b) => a.position - b.position);
   if (d.settings) { Object.assign(BR, d.settings); store.set("astro_brand", BR); }
@@ -734,7 +736,7 @@ function vAdm() {
     const tot = (a.customers || []).reduce((t, c) => t + +c.balance, 0);
     body = `<div class="search">${I.srch}<input id="cq" type="search" placeholder="Rechercher un client" value="${esc(S.cq || "")}" autocomplete="off"></div>
     <p class="lead" style="margin:0 4px 10px">${(a.customers || []).length} client(s) · ${fmt(tot)} de soldes au total</p>
-    ${cs.length ? cs.map(c => `<div class="li"><div class="th">${esc((c.first_name || "?")[0].toUpperCase())}</div><div class="tx"><b>${esc(c.first_name || "Client")}</b><small>${c.username ? "@" + esc(c.username) : "ID " + c.id}</small></div><div class="rt"><b>${fmt(c.balance)}</b></div><button class="o press" data-act="client" data-id="${c.id}">Gérer</button></div>`).join("") : `<div class="empty">Aucun client trouvé.</div>`}`;
+    ${cs.length ? cs.map(c => `<div class="li"><div class="th">${esc((c.first_name || "?")[0].toUpperCase())}</div><div class="tx"><b>${esc(c.first_name || "Client")}</b><small>${c.username ? "@" + esc(c.username) : "ID " + c.id}</small></div><div class="rt"><b>${fmt(c.balance)}</b>${c.banned ? `<span class="pill p-bad">Bloqué</span>` : ""}</div><button class="o press" data-act="client" data-id="${c.id}">Gérer</button></div>`).join("") : `<div class="empty">Aucun client trouvé.</div>`}`;
   }
   else body = `<h3 class="mini" style="margin-top:2px"><span>Ma boutique</span></h3>
     <div class="li"><div class="th">${logoImg("", 22)}</div><div class="tx"><b>${esc(shopName())}</b><small>${BR.banner_url ? "Bannière et logo en place" : "Ajoute ton logo et ta bannière"}</small></div><button class="g sm" data-act="brand">Personnaliser</button></div>
@@ -754,6 +756,11 @@ function vAdm() {
 /* ================= rendu ================= */
 let paySmoke = null, extraSmoke = [];
 function render(anim = true) {
+  if (S.banned) {
+    $("#nav").style.display = "none";
+    $("#view").innerHTML = `<div class="empty" style="padding-top:30vh">${logoImg("blogo", 26)}<b style="margin-top:16px">Accès retiré</b>Ton accès à ${esc(shopName())} n'est plus disponible.</div>`;
+    return;
+  }
   const v = {home:vHome, shop:vShop, comm:vComm, hist:vHist, adm:vAdm}[S.view] || vHome;
   const el = $("#view");
   el.className = "";
@@ -1005,7 +1012,8 @@ function clientSheet(c) {
     <div class="big-amt" style="margin:0 0 6px"><input id="adj" inputmode="decimal" placeholder="0" aria-label="Montant"><span>€</span></div>
     <label class="l" for="adjn">Motif (envoyé au client)</label><input class="f" id="adjn" maxlength="120" placeholder="ex : remboursement, erreur de recharge…">
     <div class="acts" style="margin-top:16px"><button class="o red press" style="height:52px" data-act="adj" data-id="${c.id}" data-s="-1">− Retirer</button><button class="g" style="height:52px" data-act="adj" data-id="${c.id}" data-s="1">+ Ajouter</button></div>
-    ${+c.balance > 0 ? `<button class="o press" style="width:100%;height:48px;margin-top:10px" data-act="adjzero" data-id="${c.id}">Remettre le solde à 0</button>` : ""}`);
+    ${+c.balance > 0 ? `<button class="o press" style="width:100%;height:48px;margin-top:10px" data-act="adjzero" data-id="${c.id}">Remettre le solde à 0</button>` : ""}
+    ${c.id === (S.me && S.me.id) ? "" : `<button class="o ${c.banned ? "green" : "red"} press" style="width:100%;height:52px;margin-top:10px" data-act="ban" data-id="${c.id}" data-v="${c.banned ? 0 : 1}">${c.banned ? "✅ Débloquer ce client" : "⛔ Bloquer ce client (plus d'accès)"}</button>`}`);
 }
 function showAnn(a) {
   openSheet(`
@@ -1071,6 +1079,11 @@ const A = {
     const c = S.adm.customers.find(x => x.id === id);
     if (!(await ask(`${sgn < 0 ? "Retirer" : "Ajouter"} ${fmt(v)} ${sgn < 0 ? "du" : "au"} solde de ${c.first_name || "ce client"} ?`))) return;
     run(() => api("adjust_balance", {customer_id:id, delta:sgn * v, note:$("#adjn").value.trim()}), sgn < 0 ? "Solde retiré" : "Solde ajouté");
+  },
+  ban: async el => {
+    const id = +el.dataset.id, on = el.dataset.v === "1", c = S.adm.customers.find(x => x.id === id);
+    if (!(await ask(on ? `Bloquer ${c.first_name || "ce client"} ? Il n'aura plus accès à la boutique ni au bot.` : `Débloquer ${c.first_name || "ce client"} ?`))) return;
+    run(() => api("ban_customer", {customer_id:id, banned:on}), on ? "Client bloqué" : "Client débloqué");
   },
   adjzero: async el => {
     const id = +el.dataset.id, c = S.adm.customers.find(x => x.id === id);
