@@ -942,10 +942,11 @@ function itemForm(it) {
 function annForm(a) {
   const isNew = !a;
   a = a || {title:"", subtitle:"", description:"", image_url:"", logo_url:"", link_url:"", link_label:"", active:true, position:S.anns.length};
-  PICKS = {}; IMGS = {image:a.image_url || "", logo:a.logo_url || ""};
+  PICKS = {}; IMGS = {image:a.image_url || "", banner:a.banner_url || "", logo:a.logo_url || ""};
   openSheet(`<h3 class="disp">${isNew ? "Nouvelle annonce" : "Modifier l'annonce"}</h3>
     <form id="fa">
-      ${photoField("image", "Image de l'annonce (bannière)", IMGS.image)}
+      ${photoField("image", "Photo de l'annonce (dans le carrousel de l'accueil)", IMGS.image)}
+      ${photoField("banner", "Bannière (en grand quand on ouvre l'annonce)", IMGS.banner, false, true)}
       ${photoField("logo", "Logo (optionnel)", IMGS.logo, true)}
       <label class="l" for="at">Titre</label><input class="f" id="at" required maxlength="60" value="${esc(a.title)}" placeholder="ex : Nouvel arrivage">
       <label class="l" for="as">Texte court (sur la bannière)</label><input class="f" id="as" maxlength="120" value="${esc(a.subtitle || "")}" placeholder="ex : Stock limité, premiers arrivés premiers servis">
@@ -963,7 +964,7 @@ function annForm(a) {
     if (link && !/^https?:\/\//i.test(link)) link = "https://" + link.replace(/^@/, "t.me/");
     const undo = busy($("#save"), Object.keys(PICKS).length ? "Envoi des images…" : "Publication…");
     run(async () => { await uploadPicks();
-      await api("save_announcement", {row:{id:a.id, title, subtitle:$("#as").value.trim(), description:$("#ad").value.trim(), image_url:IMGS.image, logo_url:IMGS.logo,
+      await api("save_announcement", {row:{id:a.id, title, subtitle:$("#as").value.trim(), description:$("#ad").value.trim(), image_url:IMGS.image, banner_url:IMGS.banner, logo_url:IMGS.logo,
         link_url:link, link_label:$("#abl").value.trim(), active:$("#aa").checked, position:num($("#ao").value) || 0}}); },
       isNew ? "Annonce publiée" : "Annonce enregistrée", undo);
   };
@@ -1017,7 +1018,7 @@ function clientSheet(c) {
 }
 function showAnn(a) {
   openSheet(`
-    ${a.image_url || isAdmin() ? `<div class="big" style="aspect-ratio:16/9" ${isAdmin() ? `data-act="annbanner" data-id="${a.id}"` : ""}>${a.image_url ? `<img src="${esc(a.image_url)}" alt="">` : `<span class="bhint">+ Ajouter une bannière</span>`}${isAdmin() ? `<span class="bedit">✎ Changer la bannière</span>` : ""}</div>` : ""}
+    ${(() => { const bn = a.banner_url || a.image_url; return bn || isAdmin() ? `<div class="big" style="aspect-ratio:16/9" ${isAdmin() ? `data-act="annbanner" data-id="${a.id}"` : ""}>${bn ? `<img src="${esc(bn)}" alt="">` : `<span class="bhint">+ Ajouter une bannière</span>`}${isAdmin() ? `<span class="bedit">✎ Changer la bannière</span>` : ""}</div>` : ""; })()}
     <div class="ahead">${a.logo_url ? `<img class="annlogo" src="${esc(a.logo_url)}" alt="">` : ""}<div><h3 class="disp">${esc(a.title)}</h3>${a.subtitle ? `<small>${esc(a.subtitle)}</small>` : ""}</div></div>
     ${a.description ? `<p class="dd">${esc(a.description)}</p>` : ""}
     ${a.link_url ? `<button class="g full" data-act="link" data-url="${esc(a.link_url)}">${esc(a.link_label || "Ouvrir")} ${I.arrow}</button>` : ""}
@@ -1139,7 +1140,7 @@ $("#file").onchange = async () => {
     const a = S.anns.find(x => x.id === window._annId); if (!a) return;
     toast("Envoi de la bannière…");
     try { const data = await compress(f, 1600); const url = (await api("upload", {data})).url;
-      await api("save_announcement", {row:{...a, image_url:url}}); await refresh(); render(false); showAnn(S.anns.find(x => x.id === a.id)); toast("Bannière mise à jour"); hap("n", "success"); }
+      await api("save_announcement", {row:{...a, banner_url:url}}); await refresh(); render(false); showAnn(S.anns.find(x => x.id === a.id)); toast("Bannière mise à jour"); hap("n", "success"); }
     catch(e) { toast(e.message || "Erreur", true); }
     return;
   }
