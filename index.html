@@ -823,7 +823,7 @@ function showItem(it) {
   D_ITEM = it; D_QTY = 1;
   const pc = promo(it);
   openSheet(`
-    <div class="big">${it.image_url ? `<img src="${esc(it.image_url)}" alt="">` : `<span class="mono">${esc(it.name[0])}</span>`}${pc && !soldOut(it) ? `<span class="promo" style="font-size:13px">-${pc}%</span>` : ""}</div>
+    <div class="big" ${isAdmin() ? `data-act="itembanner" data-id="${it.id}"` : ""}>${(it.banner_url || it.image_url) ? `<img src="${esc(it.banner_url || it.image_url)}" alt="">` : `<span class="mono">${esc(it.name[0])}</span>`}${isAdmin() ? `<span class="bedit">✎ Changer la photo du haut</span>` : ""}${pc && !soldOut(it) ? `<span class="promo" style="font-size:13px">-${pc}%</span>` : ""}</div>
     <h3 class="dt disp">${esc(it.name)}</h3>
     <div class="pr" style="gap:10px">${pc ? `<s style="font-size:15px">${fmt(it.old_price)}</s>` : ""}<b style="font-size:24px">${hasP(it.price) ? fmt(it.price) : "Prix sur demande"}</b></div>
     <div class="pills" style="margin-top:8px">${it.badge && !soldOut(it) ? `<span class="pill p-ok">${I.bolt} ${esc(it.badge)}</span>` : ""}${stockPill(it)}</div>
@@ -911,10 +911,12 @@ function itemForm(it) {
   if (!S.cats.length) { toast("Crée d'abord une catégorie", true); return catForm(); }
   const isNew = !it;
   it = it || {name:"", price:"", old_price:"", stock:"", badge:"", description:"", image_url:"", available:true, category_id:S.cats.find(c => c.id === S.cat) ? S.cat : S.cats[0].id};
-  PICKS = {}; IMGS = {image:it.image_url || ""};
+  PICKS = {}; IMGS = {image:it.image_url || "", banner:it.banner_url || ""};
   openSheet(`<h3 class="disp">${isNew ? "Nouvel article" : "Modifier l'article"}</h3>
     <form id="fi">
-      ${photoField("image", "Photo", IMGS.image)}
+      ${photoField("image", "Photo de l'article (vignette dans la boutique)", IMGS.image)}
+      ${photoField("banner", "Photo du haut (quand on appuie sur l'article)", IMGS.banner, false, true)}
+      <p class="lead" style="margin:6px 4px 0">Sans photo du haut, c'est la photo de l'article qui s'affiche.</p>
       <label class="l" for="in">Nom</label><input class="f" id="in" required maxlength="80" value="${esc(it.name)}" placeholder="ex : Chicha Gold Edition">
       <div class="two"><div><label class="l" for="ip">Prix</label><input class="f" id="ip" inputmode="decimal" value="${it.price ?? ""}" placeholder="49,90"></div>
         <div><label class="l" for="iop">Ancien prix (promo)</label><input class="f" id="iop" inputmode="decimal" value="${it.old_price ?? ""}" placeholder="optionnel"></div></div>
@@ -934,7 +936,7 @@ function itemForm(it) {
     if ([row.price, row.old_price, row.stock].some(v => v !== null && (isNaN(v) || v < 0))) return toast("Vérifie les nombres", true);
     if (row.stock !== null) row.stock = Math.floor(row.stock);
     const undo = busy($("#save"), Object.keys(PICKS).length ? "Envoi de la photo…" : "Enregistrement…");
-    run(async () => { await uploadPicks(); row.image_url = IMGS.image; await api("save_item", {row}); S.cat = row.category_id; },
+    run(async () => { await uploadPicks(); row.image_url = IMGS.image; row.banner_url = IMGS.banner; await api("save_item", {row}); S.cat = row.category_id; },
       isNew ? "Article ajouté" : "Article enregistré", undo);
   };
 }
@@ -1090,6 +1092,7 @@ const A = {
     const id = +el.dataset.id, c = S.adm.customers.find(x => x.id === id);
     if (await ask(`Remettre le solde de ${c.first_name || "ce client"} à 0 (−${fmt(c.balance)}) ?`)) run(() => api("adjust_balance", {customer_id:id, delta:-c.balance, note:($("#adjn") && $("#adjn").value.trim()) || "Solde remis à zéro"}), "Solde remis à 0");
   },
+  itembanner: el => { PICK_K = "itemb"; PICKS = {}; window._itemId = el.dataset.id; $("#file").click(); },
   annbanner: el => { PICK_K = "annb"; PICKS = {}; window._annId = el.dataset.id; $("#file").click(); },
   copy: async () => { const t = ($("#rinfo") || {}).textContent || ""; try { await navigator.clipboard.writeText(t); toast("Infos copiées"); } catch(e) { toast("Copie impossible, sélectionne le texte", true); } },
   approve: el => { el.disabled = true; run(() => api("approve_recharge", {id:el.dataset.id}), "Recharge validée", () => el.disabled = false); },
@@ -1136,6 +1139,14 @@ document.addEventListener("animationend", e => { if (e.animationName === "tapc")
 $("#ov").addEventListener("click", e => { if (e.target === $("#ov")) closeSheet(); });
 $("#file").onchange = async () => {
   const f = $("#file").files[0]; $("#file").value = ""; if (!f) return;
+  if (PICK_K === "itemb") {
+    const it = S.items.find(x => x.id === window._itemId); if (!it) return;
+    toast("Envoi de la photo…");
+    try { const data = await compress(f, 1400); const url = (await api("upload", {data})).url;
+      await api("save_item", {row:{...it, banner_url:url}}); await refresh(); render(false); showItem(S.items.find(x => x.id === it.id)); toast("Photo du haut mise à jour"); hap("n", "success"); }
+    catch(e) { toast(e.message || "Erreur", true); }
+    return;
+  }
   if (PICK_K === "annb") {
     const a = S.anns.find(x => x.id === window._annId); if (!a) return;
     toast("Envoi de la bannière…");
