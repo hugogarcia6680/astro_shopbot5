@@ -493,10 +493,12 @@ const isAdmin = () => !!(S.me && S.me.admin);
 const BR = Object.assign({shop_name:CONFIG.SHOP_NAME, tagline:"", logo_url:"", banner_url:"", pay_paypal:"", pay_virement:"", pay_crypto:"", welcome_image_url:"", welcome_text:"", welcome_button:""}, store.get("astro_brand", {}));
 const WELCOME_DEF = () => `Bienvenue chez ${shopName()} 👋\nAppuie sur le bouton pour entrer.`;
 const ALL_METHODS = [
-  {id:"paypal", name:"PayPal", mono:"P", key:"pay_paypal", hint:"ex : Envoie le montant à : ton-paypal@exemple.com\nIndique ton @Telegram en message."},
+  {id:"paypal", name:"PayPal", mono:"P", key:"pay_paypal", hint:"ex : paypal.me/tonnom\n(avec un lien paypal.me, le client est envoyé directement sur ta page PayPal)"},
   {id:"virement", name:"Virement bancaire", mono:"€", key:"pay_virement", hint:"ex : IBAN : FR76 …\nBénéficiaire : …\nRéférence : ton @Telegram"},
   {id:"crypto", name:"Crypto", mono:"₿", key:"pay_crypto", hint:"ex : USDT (TRC20) : T…\nBTC : bc1…\nETH : 0x…"}
 ];
+const ppUser = () => { const m = /(?:paypal\.me|paypal\.com\/paypalme)\/([A-Za-z0-9_.-]+)/i.exec(BR.pay_paypal || ""); return m ? m[1] : ""; };
+const ppUrl = amount => `https://www.paypal.com/paypalme/${encodeURIComponent(ppUser())}/${(+amount).toFixed(2)}EUR`;
 const METHODS = () => ALL_METHODS.map(m => ({...m, info:(BR[m.key] || "").trim()})).filter(m => m.info);
 const shopName = () => BR.shop_name || CONFIG.SHOP_NAME;
 const logoSrc = () => BR.logo_url || CONFIG.DEFAULT_LOGO || "";
@@ -523,7 +525,7 @@ const D = {
     {id:"a2", title:"-30 % ce week-end", subtitle:"Sur une sélection d'accessoires.", description:"Promo valable jusqu'à dimanche minuit, dans la limite des stocks.", image_url:"", logo_url:"", link_url:"", link_label:"", active:true, position:1}
   ],
   settings: {shop_name:"Astro Shop", tagline:"", logo_url:"", banner_url:"", welcome_image_url:"", welcome_text:"", welcome_button:"",
-    pay_paypal:"Envoie le montant à : ton-paypal@exemple.com\nIndique ton @Telegram en message.",
+    pay_paypal:"paypal.me/astroshop",
     pay_virement:"IBAN : FR76 0000 0000 0000 0000\nBénéficiaire : Astro Shop\nRéférence : ton @Telegram",
     pay_crypto:"USDT (TRC20) : TXyz…exemple\nBTC : bc1q…exemple"},
   others: [{id:2, first_name:"Karim", username:"karim75", balance:45}, {id:3, first_name:"Sofiane", username:"", balance:120}],
@@ -856,12 +858,17 @@ function showRecharge(min) {
     <button class="o press" style="width:100%" data-act="copy">Copier les infos de paiement</button>
     <label class="l" for="rn">Référence / message (optionnel)</label>
     <input class="f" id="rn" maxlength="80" placeholder="ex : nom du payeur, n° de transaction">
-    <button class="g full" style="margin-top:16px" data-act="sendrech">Envoyer la demande</button>
+    <button class="g full" style="margin-top:16px" data-act="sendrech" id="rbtn">Envoyer la demande</button>
     <p class="lead center" style="margin:10px 0 0">Ton solde est crédité dès que le paiement est validé.</p>`);
   $("#ra").oninput = e => { R.amount = e.target.value; document.querySelectorAll(".am").forEach(b => b.classList.toggle("on", +b.dataset.v === +String(R.amount).replace(",", "."))); };
   updMethod();
 }
-function updMethod() { const m = METHODS().find(x => x.id === R.method); const el = $("#rinfo"); if (el) el.textContent = m ? m.info : ""; }
+function updMethod() {
+  const m = METHODS().find(x => x.id === R.method), el = $("#rinfo"), b = $("#rbtn"), pp = R.method === "paypal" && ppUser();
+  if (el) el.textContent = pp ? "Tu vas être redirigé vers la page PayPal d'Astro Shop avec le montant déjà rempli. Une fois le paiement envoyé, ton solde sera crédité dès validation." : (m ? m.info : "");
+  if (b) b.textContent = pp ? "Payer avec PayPal" : "Envoyer la demande";
+  const c = document.querySelector('[data-act="copy"]'); if (c) c.hidden = !!pp;
+}
 
 /* ----- formulaires admin ----- */
 let PICKS = {}, IMGS = {}, PICK_K = null;
@@ -1044,14 +1051,16 @@ const A = {
     const amount = +String(R.amount).replace(",", ".");
     if (!(amount >= CONFIG.RECHARGE_MIN && amount <= CONFIG.RECHARGE_MAX)) return toast(`Montant entre ${fmt(CONFIG.RECHARGE_MIN)} et ${fmt(CONFIG.RECHARGE_MAX)}`, true);
     const m = METHODS().find(x => x.id === R.method); if (!m) return toast("Choisis un moyen de paiement", true);
+    const pp = R.method === "paypal" && ppUser();
+    if (pp) openLink(ppUrl(amount));
     el.disabled = true; el.textContent = "Envoi…";
     try {
       await api("recharge", {amount, method:R.method, note:$("#rn").value.trim()});
       await refresh(); hap("n", "success"); render(false);
       openSheet(`<div class="center"><div class="okk">${I.check}</div><h3 class="disp">Demande envoyée</h3><p>Recharge de <b style="color:var(--gold2)">${fmt(amount)}</b> via ${esc(m.name)}</p></div>
-        <div class="box" id="rinfo">${esc(m.info)}</div><button class="o press" style="width:100%" data-act="copy">Copier les infos de paiement</button><p class="lead center">Dès réception du paiement, ton solde est crédité et tu es prévenu dans le chat.</p>
-        <button class="g full" data-act="close">Compris</button>`);
-    } catch(e) { toast(e.message, true); el.disabled = false; el.textContent = "Envoyer la demande"; }
+        ${pp ? `<button class="g full" data-act="link" data-url="${esc(ppUrl(amount))}">Ouvrir PayPal · ${fmt(amount)}</button><p class="lead center">PayPal ne s'est pas ouvert ? Appuie sur le bouton ci-dessus.</p>` : `<div class="box" id="rinfo">${esc(m.info)}</div><button class="o press" style="width:100%" data-act="copy">Copier les infos de paiement</button>`}<p class="lead center">Dès réception du paiement, ton solde est crédité et tu es prévenu dans le chat.</p>
+        <button class="${pp ? "o" : "g"} full" style="width:100%;height:50px" data-act="close">Compris</button>`);
+    } catch(e) { toast(e.message, true); el.disabled = false; el.textContent = pp ? "Payer avec PayPal" : "Envoyer la demande"; }
   },
   hist: el => { S.hist = el.dataset.v; render(false); },
   admtab: el => { S.admTab = el.dataset.v; render(false); },
