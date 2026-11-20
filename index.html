@@ -505,6 +505,7 @@ const S = {
   favs: new Set(store.get("astro_favs", [])), shownBal: 0
 };
 const isAdmin = () => !!(S.me && S.me.admin);
+const APP_BUILD = 11; // version de cette page (mise à jour auto si le serveur annonce plus récent)
 const BR = Object.assign({shop_name:CONFIG.SHOP_NAME, tagline:"", logo_url:"", banner_url:"", pay_paypal:"", pay_virement:"", pay_crypto:"", welcome_image_url:"", welcome_text:"", welcome_button:""}, store.get("astro_brand", {}));
 const WELCOME_DEF = () => `Bienvenue chez ${shopName()} 👋\nAppuie sur le bouton pour entrer.`;
 const ALL_METHODS = [
@@ -605,7 +606,8 @@ async function refresh() {
   S.banned = !!d.banned; if (S.banned) return;
   S.cats = (d.cats || []).sort((a, b) => a.position - b.position);
   S.items = (d.items || []).sort((a, b) => a.position - b.position);
-  if (d.settings) { Object.assign(BR, d.settings); store.set("astro_brand", BR); }
+  if (d.settings && +d.settings.app_version > APP_BUILD) { try { const k = "astro_upd" + d.settings.app_version; if (!sessionStorage.getItem(k)) { sessionStorage.setItem(k, "1"); const u = new URL(location.href); u.searchParams.set("v", d.settings.app_version); location.replace(u.toString()); return; } } catch(e){} }
+  if (d.settings) { const st = {...d.settings}; delete st.app_version; Object.assign(BR, st); store.set("astro_brand", BR); }
   S.anns = (d.anns || []).sort((a, b) => a.position - b.position);
   S.me = d.me; S.recharges = d.recharges || []; S.orders = d.orders || []; S.adm = d.admin || null;
 }
@@ -873,7 +875,7 @@ function showShipForm() {
     ${f("sa", "address", "Adresse complète", "text", "N°, rue, code postal, ville", "street-address", 200)}
     ${f("sp", "phone", "Numéro de téléphone", "tel", "06 12 34 56 78", "tel", 25)}
     ${f("sm", "email", "Adresse mail", "email", "nom@exemple.fr", "email", 120)}
-    <button class="g full" style="margin-top:8px" data-act="pay">Confirmer et payer · ${fmt(total)}</button>
+    <button class="g full" style="margin-top:8px" data-act="pay">Envoyer la commande · ${fmt(total)}</button>
     <button class="o press" style="width:100%;height:46px;margin-top:10px" data-act="backitem">Retour</button>`);
   $("#sheet").addEventListener("input", e => e.target.classList && e.target.classList.remove("bad"));
 }
@@ -910,6 +912,7 @@ function updMethod() {
 
 /* ----- formulaires admin ----- */
 let PICKS = {}, IMGS = {}, PICK_K = null, RATIO = {};
+
 const photoField = (k, label, url, round, wide) => `<label class="l">${label}</label><div class="photo"><div class="th ${round ? "round" : ""} ${wide ? "wide" : ""}" id="th-${k}">${url ? `<img src="${esc(url)}" alt="">` : "Image"}</div>
   <div class="acts" style="flex-direction:column"><button type="button" class="o press" data-act="pick" data-k="${k}">${url ? "Changer" : "Ajouter une image"}</button><button type="button" class="o red press" data-act="rmimg" data-k="${k}" ${url ? "" : "hidden"}>Retirer</button></div></div>`;
 async function uploadPicks() { for (const k of Object.keys(PICKS)) { IMGS[k] = (await api("upload", {data:PICKS[k]})).url; delete PICKS[k]; } }
@@ -1125,14 +1128,14 @@ const A = {
     const first = Object.keys(bad).find(k => bad[k]);
     if (first) { toast({sf:"Indique ton prénom", sl:"Indique ton nom", sa:"Indique ton adresse complète", sp:"Numéro de téléphone invalide", sm:"Adresse mail invalide"}[first], true); hap("n", "error"); $("#" + first).focus(); return; }
     store.set("astro_ship", v);
-    el.disabled = true; el.textContent = "Paiement…";
+    el.disabled = true; el.textContent = "Envoi de la commande…";
     try {
       await api("checkout", {cart:[{id:D_ITEM.id, qty:D_QTY}], ship:v});
       await refresh(); hap("n", "success");
       openSheet(`<div class="center"><div class="okk">${I.check}</div><h3 class="disp">Commande confirmée</h3><p>${D_QTY} × ${esc(D_ITEM.name)} · ${fmt(D_ITEM.price * D_QTY)}</p><p>Tu recevras la confirmation dans le chat.</p>
         <button class="g full" style="margin-top:18px" data-act="go" data-v="hist">Voir mes commandes</button></div>`);
       S.hist = "orders"; render(false);
-    } catch(e) { toast(e.message, true); hap("n", "error"); el.disabled = false; el.textContent = `Confirmer et payer · ${fmt(D_ITEM.price * D_QTY)}`; }
+    } catch(e) { toast(e.message, true); hap("n", "error"); el.disabled = false; el.textContent = `Envoyer la commande · ${fmt(D_ITEM.price * D_QTY)}`; }
   },
   backitem: () => { hap(); showItem(D_ITEM); },
   recharge: el => { hap(); showRecharge(el.dataset.min ? +el.dataset.min : 0); },
