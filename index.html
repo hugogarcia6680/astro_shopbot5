@@ -236,6 +236,8 @@ label.l{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin
 .f{width:100%;min-height:48px;border-radius:14px;border:1px solid var(--line);background:var(--card2);padding:11px 14px;font-size:16px;outline:none;transition:border-color .2s}
 .f:focus{border-color:rgba(212,166,74,.65)}
 textarea.f{min-height:88px;resize:vertical}
+.ship{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:12px;background:rgba(212,166,74,.07);border:1px solid rgba(212,166,74,.2);font-size:13px;color:var(--muted)}.ship b{color:var(--txt,#f3ead8);font-size:14px}.ship a{color:var(--gold2)}
+.f.bad{border-color:#e0574f}.req{color:var(--gold2)}
 .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
 .amts{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px}
 .am{height:48px;border-radius:14px;background:var(--card2);border:1px solid var(--line);font-weight:800;font-size:15px;transition:.2s;white-space:nowrap}
@@ -561,7 +563,7 @@ function demoApi(a, p) {
       if (D.me.balance < total) throw new Error("Solde insuffisant");
       D.me.balance = Math.round((D.me.balance - total) * 100) / 100;
       if (it.stock !== null && it.stock !== undefined) it.stock -= c.qty;
-      const o = {id:uid(), lines:[{id:it.id, name:it.name, price:it.price, qty:c.qty, image_url:it.image_url}], total, status:"pending", created_at:new Date().toISOString()};
+      const o = {id:uid(), shipping:p.ship, lines:[{id:it.id, name:it.name, price:it.price, qty:c.qty, image_url:it.image_url}], total, status:"pending", created_at:new Date().toISOString()};
       D.orders.unshift(o); return {order:o};
     }
     case "approve_recharge": { const r = D.recharges.find(x => x.id === p.id); r.status = "approved"; D.me.balance += +r.amount; return {ok:true}; }
@@ -648,6 +650,7 @@ const orderRow = (o, admin) => {
       <div class="tx"><b>${esc(first.name || "Commande")}${l.length > 1 ? ` +${l.length - 1}` : ""}</b><small>${n} article${n > 1 ? "s" : ""} · ${dfmt(o.created_at)}${admin && o.customers ? ` · ${esc(o.customers.first_name)}${o.customers.username ? " @" + esc(o.customers.username) : ""}` : ""}</small></div>
       <div class="rt"><b>${fmt(o.total)}</b>${admin ? "" : `<span class="pill ${st[1]}">${st[0]}</span>`}</div>
     </div>
+    ${admin && o.shipping ? `<div class="ship"><b>${esc(o.shipping.first_name)} ${esc(o.shipping.last_name)}</b><span>${esc(o.shipping.address)}</span><span><a href="tel:${esc(o.shipping.phone)}">${esc(o.shipping.phone)}</a> · ${esc(o.shipping.email)}</span></div>` : ""}
     ${admin ? `<select class="f" data-chg="ostatus" data-id="${o.id}">${Object.entries(OST).map(([k, v]) => `<option value="${k}" ${k === o.status ? "selected" : ""}>${k === "cancelled" ? "Annuler et rembourser" : v[0]}</option>`).join("")}</select>` : ""}
   </div>`;
 };
@@ -858,6 +861,21 @@ function renderBuy() {
     ${!S.me ? `<button class="g full" disabled>Ouvre la boutique depuis Telegram</button>`
       : missing ? `<button class="g full" data-act="recharge" data-min="${Math.ceil(missing)}">Recharger · il manque ${fmt(missing)}</button>`
       : `<button class="g full" data-act="buy">Acheter · ${fmt(total)}</button>`}`;
+}
+
+/* ----- coordonnées obligatoires avant paiement ----- */
+function showShipForm() {
+  const v = store.get("astro_ship", {}), total = Math.round(D_ITEM.price * D_QTY * 100) / 100;
+  const f = (id, k, label, type, ph, ac, max) => `<label class="l" for="${id}">${label} <span class="req">*</span></label><input class="f" id="${id}" type="${type}" required maxlength="${max}" autocomplete="${ac}" value="${esc(v[k] || "")}" placeholder="${ph}" style="margin-bottom:10px">`;
+  openSheet(`<h3 class="disp" style="margin:0 0 4px">Tes coordonnées</h3>
+    <p style="margin:0 0 14px;color:var(--muted);font-size:14px">${D_QTY} × ${esc(D_ITEM.name)} · <b style="color:var(--gold2)">${fmt(total)}</b><br>Tous les champs sont obligatoires.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 10px"><div>${f("sf", "first_name", "Prénom", "text", "Prénom", "given-name", 60)}</div><div>${f("sl", "last_name", "Nom", "text", "Nom", "family-name", 60)}</div></div>
+    ${f("sa", "address", "Adresse complète", "text", "N°, rue, code postal, ville", "street-address", 200)}
+    ${f("sp", "phone", "Numéro de téléphone", "tel", "06 12 34 56 78", "tel", 25)}
+    ${f("sm", "email", "Adresse mail", "email", "nom@exemple.fr", "email", 120)}
+    <button class="g full" style="margin-top:8px" data-act="pay">Confirmer et payer · ${fmt(total)}</button>
+    <button class="o press" style="width:100%;height:46px;margin-top:10px" data-act="backitem">Retour</button>`);
+  $("#sheet").addEventListener("input", e => e.target.classList && e.target.classList.remove("bad"));
 }
 
 /* ----- recharge ----- */
@@ -1099,16 +1117,24 @@ const A = {
   fav: (el, e) => { e.stopPropagation(); const id = el.dataset.id; S.favs.has(id) ? S.favs.delete(id) : S.favs.add(id); store.set("astro_favs", [...S.favs]); hap("i", "medium"); if (S.cat === "fav") render(false); else el.classList.toggle("on"); },
   item: el => { const it = S.items.find(i => i.id === el.dataset.id); if (!it) return; S.edit ? itemForm(it) : showItem(it); },
   qty: el => { const max = hasP(D_ITEM.stock) ? D_ITEM.stock : 99; D_QTY = Math.max(1, Math.min(max, D_QTY + +el.dataset.d)); hap(); renderBuy(); },
-  buy: async el => {
+  buy: () => { hap(); showShipForm(); },
+  pay: async el => {
+    const v = {first_name:$("#sf").value.trim(), last_name:$("#sl").value.trim(), address:$("#sa").value.trim(), phone:$("#sp").value.trim(), email:$("#sm").value.trim()};
+    const bad = {sf:!v.first_name, sl:!v.last_name, sa:v.address.length < 8, sp:v.phone.replace(/\D/g, "").length < 8, sm:!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email)};
+    Object.entries(bad).forEach(([k, b]) => $("#" + k).classList.toggle("bad", b));
+    const first = Object.keys(bad).find(k => bad[k]);
+    if (first) { toast({sf:"Indique ton prénom", sl:"Indique ton nom", sa:"Indique ton adresse complète", sp:"Numéro de téléphone invalide", sm:"Adresse mail invalide"}[first], true); hap("n", "error"); $("#" + first).focus(); return; }
+    store.set("astro_ship", v);
     el.disabled = true; el.textContent = "Paiement…";
     try {
-      await api("checkout", {cart:[{id:D_ITEM.id, qty:D_QTY}]});
+      await api("checkout", {cart:[{id:D_ITEM.id, qty:D_QTY}], ship:v});
       await refresh(); hap("n", "success");
       openSheet(`<div class="center"><div class="okk">${I.check}</div><h3 class="disp">Commande confirmée</h3><p>${D_QTY} × ${esc(D_ITEM.name)} · ${fmt(D_ITEM.price * D_QTY)}</p><p>Tu recevras la confirmation dans le chat.</p>
         <button class="g full" style="margin-top:18px" data-act="go" data-v="hist">Voir mes commandes</button></div>`);
       S.hist = "orders"; render(false);
-    } catch(e) { toast(e.message, true); hap("n", "error"); el.disabled = false; renderBuy(); }
+    } catch(e) { toast(e.message, true); hap("n", "error"); el.disabled = false; el.textContent = `Confirmer et payer · ${fmt(D_ITEM.price * D_QTY)}`; }
   },
+  backitem: () => { hap(); showItem(D_ITEM); },
   recharge: el => { hap(); showRecharge(el.dataset.min ? +el.dataset.min : 0); },
   amt: el => { R.amount = +el.dataset.v; $("#ra").value = R.amount; document.querySelectorAll(".am").forEach(b => b.classList.toggle("on", b === el)); hap(); },
   method: el => { R.method = el.dataset.v; document.querySelectorAll(".mt").forEach(b => b.classList.toggle("on", b === el)); updMethod(); hap(); },
