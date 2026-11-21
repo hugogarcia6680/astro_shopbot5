@@ -237,7 +237,7 @@ label.l{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin
 .f:focus{border-color:rgba(212,166,74,.65)}
 textarea.f{min-height:88px;resize:vertical}
 .ship{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:12px;background:rgba(212,166,74,.07);border:1px solid rgba(212,166,74,.2);font-size:13px;color:var(--muted)}.ship b{color:var(--txt,#f3ead8);font-size:14px}.ship a{color:var(--gold2)}
-.f.bad{border-color:#e0574f}.req{color:var(--gold2)}
+.f.bad{border-color:#e0574f}.ship .snote{margin-top:6px;padding-top:6px;border-top:1px solid rgba(212,166,74,.18);color:var(--txt,#f3ead8);white-space:pre-wrap}.req{color:var(--gold2)}
 .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
 .amts{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px}
 .am{height:48px;border-radius:14px;background:var(--card2);border:1px solid var(--line);font-weight:800;font-size:15px;transition:.2s;white-space:nowrap}
@@ -505,7 +505,7 @@ const S = {
   favs: new Set(store.get("astro_favs", [])), shownBal: 0
 };
 const isAdmin = () => !!(S.me && S.me.admin);
-const APP_BUILD = 11; // version de cette page (mise à jour auto si le serveur annonce plus récent)
+const APP_BUILD = 12; // version de cette page (mise à jour auto si le serveur annonce plus récent)
 const BR = Object.assign({shop_name:CONFIG.SHOP_NAME, tagline:"", logo_url:"", banner_url:"", pay_paypal:"", pay_virement:"", pay_crypto:"", welcome_image_url:"", welcome_text:"", welcome_button:""}, store.get("astro_brand", {}));
 const WELCOME_DEF = () => `Bienvenue chez ${shopName()} 👋\nAppuie sur le bouton pour entrer.`;
 const ALL_METHODS = [
@@ -652,7 +652,7 @@ const orderRow = (o, admin) => {
       <div class="tx"><b>${esc(first.name || "Commande")}${l.length > 1 ? ` +${l.length - 1}` : ""}</b><small>${n} article${n > 1 ? "s" : ""} · ${dfmt(o.created_at)}${admin && o.customers ? ` · ${esc(o.customers.first_name)}${o.customers.username ? " @" + esc(o.customers.username) : ""}` : ""}</small></div>
       <div class="rt"><b>${fmt(o.total)}</b>${admin ? "" : `<span class="pill ${st[1]}">${st[0]}</span>`}</div>
     </div>
-    ${admin && o.shipping ? `<div class="ship"><b>${esc(o.shipping.first_name)} ${esc(o.shipping.last_name)}</b><span>${esc(o.shipping.address)}</span><span><a href="tel:${esc(o.shipping.phone)}">${esc(o.shipping.phone)}</a> · ${esc(o.shipping.email)}</span></div>` : ""}
+    ${admin && o.shipping ? `<div class="ship"><b>${esc(o.shipping.first_name)} ${esc(o.shipping.last_name)}</b><span>${esc(o.shipping.address)}</span><span><a href="tel:${esc(o.shipping.phone)}">${esc(o.shipping.phone)}</a> · ${esc(o.shipping.email)}</span>${o.shipping.note ? `<span class="snote">📝 ${esc(o.shipping.note)}</span>` : ""}</div>` : ""}
     ${admin ? `<select class="f" data-chg="ostatus" data-id="${o.id}">${Object.entries(OST).map(([k, v]) => `<option value="${k}" ${k === o.status ? "selected" : ""}>${k === "cancelled" ? "Annuler et rembourser" : v[0]}</option>`).join("")}</select>` : ""}
   </div>`;
 };
@@ -875,6 +875,7 @@ function showShipForm() {
     ${f("sa", "address", "Adresse complète", "text", "N°, rue, code postal, ville", "street-address", 200)}
     ${f("sp", "phone", "Numéro de téléphone", "tel", "06 12 34 56 78", "tel", 25)}
     ${f("sm", "email", "Adresse mail", "email", "nom@exemple.fr", "email", 120)}
+    <label class="l" for="sn">Demande particulière <span style="color:var(--muted);font-weight:500">(facultatif)</span></label><textarea class="f" id="sn" maxlength="500" placeholder="Une précision, une demande spéciale, un créneau de livraison…"></textarea>
     <button class="g full" style="margin-top:8px" data-act="pay">Envoyer la commande · ${fmt(total)}</button>
     <button class="o press" style="width:100%;height:46px;margin-top:10px" data-act="backitem">Retour</button>`);
   $("#sheet").addEventListener("input", e => e.target.classList && e.target.classList.remove("bad"));
@@ -1123,11 +1124,12 @@ const A = {
   buy: () => { hap(); showShipForm(); },
   pay: async el => {
     const v = {first_name:$("#sf").value.trim(), last_name:$("#sl").value.trim(), address:$("#sa").value.trim(), phone:$("#sp").value.trim(), email:$("#sm").value.trim()};
+    const note = $("#sn").value.trim();
     const bad = {sf:!v.first_name, sl:!v.last_name, sa:v.address.length < 8, sp:v.phone.replace(/\D/g, "").length < 8, sm:!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email)};
     Object.entries(bad).forEach(([k, b]) => $("#" + k).classList.toggle("bad", b));
     const first = Object.keys(bad).find(k => bad[k]);
     if (first) { toast({sf:"Indique ton prénom", sl:"Indique ton nom", sa:"Indique ton adresse complète", sp:"Numéro de téléphone invalide", sm:"Adresse mail invalide"}[first], true); hap("n", "error"); $("#" + first).focus(); return; }
-    store.set("astro_ship", v);
+    store.set("astro_ship", v); v.note = note;
     el.disabled = true; el.textContent = "Envoi de la commande…";
     try {
       await api("checkout", {cart:[{id:D_ITEM.id, qty:D_QTY}], ship:v});
